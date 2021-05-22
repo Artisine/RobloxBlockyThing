@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Noise Visualiser</title>
+</head>
+<body>
+
+	<div name="debug-canvas-container">
+		<canvas id="debug-canvas">
+			uhoh
+		</canvas>
+	</div>
+
+
+	<style>
+		* {
+			padding: 0;
+			margin: 0;
+			box-sizing: border-box;
+		}
+
+		:root {
+			font-size: 12px;
+		}
+
+		body {
+			background-color: white;
+		}
+
+		div[name="debug-canvas-container"] {
+			margin: 1rem 0 0 1rem;
+		}
+
+		canvas {
+			padding: 0;
+			margin: 0;
+			display: block;
+			border: 0.5px solid red;
+
+			width: 500px;
+			height: 320px;
+		}
+
+	</style>
+
+	<script src="./noisejs.js"></script>
+	<script>
+
+		console.log(noise);
+
+// let _perlinNoise = math.randomseed(4);
+noise.seed(Math.random());
+function map(val, smin, smax, emin, emax) {
+	const t = (val - smin) / (smax - smin);
+	return (emax - emin) * t + emin;
+}
+function customnoise(nx, ny) {
+	return map( noise.perlin2(nx, ny), -1, 1, 0, 1);
+}
+
+// stack noisefields
+
+function octave(nx, ny, octaves) {
+	let val = 0;
+	let frequency = 1;
+	let max = 0;
+	let amplitude = 1;
+
+	for (let i=0; i<octaves; i+=1) {
+		val += customnoise(nx * frequency, ny * frequency) * amplitude;
+		max += amplitude;
+		amplitude = amplitude / 2;
+		frequency = frequency * 2;
+	}
+
+	return val / max;
+}
+
+let kx = 0;
+let ky = 0;
+
+let kzoom = 0;
+let zoomlevel = 1;
+
+const canvas = document.querySelector("canvas#debug-canvas");
+const ctx = canvas.getContext("2d");
+canvas.width = parseInt(canvas.parentElement.clientWidth);
+canvas.height = parseInt(canvas.parentElement.clientHeight);
+
+function generateTexture() {
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+	ctx.fillStyle = "black";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+	ctx.beginPath();
+	for (let i=0; i<canvas.width; i+=1) {
+		for (let j=0; j<canvas.height; j+=1) {
+			let v = octave(
+				(((i + kx) - canvas.width*0.5  - kx*0.5 ) * zoomlevel ) / canvas.width, 
+				(((j + ky) - canvas.height*0.5 - ky+0.5 ) * zoomlevel ) / canvas.height, 
+				16
+			);
+			const per = (100 * v).toFixed(2) + "%";
+			ctx.fillStyle = `rgb(${per}, ${per}, ${per})`;
+			ctx.fillRect(i, j, 1, 1);
+		}
+	}
+	ctx.closePath();
+
+	return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+function degree_to_radian(deg) {
+	return (Math.PI / 180) * deg;
+}
+function animate() {
+
+	generateTexture();
+	kzoom += 10;
+	// kx += 10;
+	// ky += 1;
+	zoomlevel = Math.sin( degree_to_radian(kzoom) / 3 ) + 1.1;
+
+	requestAnimationFrame(animate);
+}
+canvas.addEventListener("click", function(evt) {
+	const px = evt.clientX;
+	const py = evt.clientY;
+
+	const dx1 = px - canvas.clientLeft;
+	const dy1 = py - canvas.clientTop;
+
+	const dx2 = (canvas.clientLeft + canvas.clientWidth * 0.5) - dx1;
+	const dy2 = (canvas.clientTop  + canvas.clientHeight * 0.5) - dy1;
+
+	kx += dx2;
+	ky += dy2;
+	console.log(`Added ${dx2} ${dy2}`);
+});
+
+
+
+
+animate();
+
+
+
+	</script>
+</body>
+</html>

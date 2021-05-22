@@ -74,7 +74,12 @@ export interface ReplicatedStorage_Events extends Folder {
 	PlaySound: BindableEvent;
 	Regenerate: RemoteEvent;
 };
-
+export interface ReplicatedStorage_Dev extends Folder {
+	HeightModifier: NumberValue;
+	ChunkSize: NumberValue;
+	CanvasX: NumberValue;
+	CanvasZ: NumberValue;
+};
 
 
 export interface FormControlNumberInputFrame extends Frame {
