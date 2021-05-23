@@ -75,10 +75,17 @@ export interface ReplicatedStorage_Events extends Folder {
 	Regenerate: RemoteEvent;
 };
 export interface ReplicatedStorage_Dev extends Folder {
-	HeightModifier: NumberValue;
+	MaximumWorldHeight: NumberValue;
+	MinimumWorldHeight: NumberValue;
+	BlockSize: NumberValue;
 	ChunkSize: NumberValue;
 	CanvasX: NumberValue;
 	CanvasZ: NumberValue;
+	Seed: NumberValue;
+	Persistance: NumberValue;
+	Lacunarity: NumberValue;
+	MaximumChunkLoadingDistance: NumberValue;
+	OffsetWorldHeight: NumberValue;
 };
 
 
