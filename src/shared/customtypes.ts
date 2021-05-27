@@ -115,7 +115,23 @@ export interface FormControlBooleanInputFrame extends Frame {
 export interface ScreenGui_Editor extends ScreenGui {
 	background: Frame & {
 		ScrollingFrame: ScrollingFrame;
+		submitButton: TextButton;
 	};
 };
 
+
+
+
+
+export interface ReplicatedStorage_Sounds extends Folder {
+	WindowsError: Sound;
+	SuccessNoise: Sound;
+	TickClackNoise: Sound;
+	ChickenEggPlopNoise: Sound;
+	BubblePopPlopNoise: Sound;
+	LightErrorNoise: Sound;
+	MuffledSlapWaterPopNoise: Sound;
+	FadeOutNotificationNoise: Sound;
+	NotificationChimeNoise: Sound;
+};
 

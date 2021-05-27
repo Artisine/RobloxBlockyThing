@@ -1,0 +1,4 @@
+CanvasX 64
+CanvasZ 64
+ChunkSize 64
+HeightModifier 256
