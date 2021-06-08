@@ -3,8 +3,8 @@ import Object from "@rbxts/object-utils";
 import {
 	ReplicatedStorage,
 	RunService,
-	Workspace
-
+	Workspace,
+	Players
 } from "@rbxts/services";
 import * as customtypes from "shared/customtypes";
 import * as Utility from "shared/utility";
@@ -57,7 +57,21 @@ let worldgenGlobals: WorldgenGlobals = {
 };
 
 
+
+
 class World {
+
+	
+	static Settings = {
+		// RenderDistance, the number of Chunks visible in a straight line, in front of a Player, before Chunk Disposal occurs
+		// Render Distance measured in number of Chunks.
+		RenderDistance: 5
+	};
+
+	static ChunkGenerationCoroutine: (thread | undefined) = undefined;
+	static ChunkDeletionCoroutine: (thread | undefined) = undefined;
+	static ChunkGenerationIsPaused: boolean = false;
+
 	static WhenInspectorChanged() {
 		// resize_canvas();
 
@@ -73,6 +87,97 @@ class World {
 		Chunk.GlobalList.forEach((chunk) => {
 			chunk.position_parts();
 		});
+	}
+
+	static GetAllPlayersCurrentChunkLocations() {
+		let playerChunkPositionsMap = new Map<Player["UserId"], Vector3>();
+		for (let player of Players.GetPlayers()) {
+			const char = player.Character! as Model;
+			const playerPosition = char.GetPrimaryPartCFrame().Position;
+			const normalisedChunkPosition = World.ConvertWorldCoordinateToChunkCoordinate(playerPosition);
+			print(`${player.Name} is at Chunk(${normalisedChunkPosition.X}, ${normalisedChunkPosition.Z}).`);
+			playerChunkPositionsMap.set(player.UserId, normalisedChunkPosition);
+		}
+		return playerChunkPositionsMap;
+	}
+
+	static CheckIfChunkAtCoordinateAlreadyExists(x: number, z: number): boolean {
+		const abc = !!(Chunk.GlobalList.find((queryChunk) => {
+			return queryChunk.positionId === `${x},${z}`;
+		}));
+		return abc;
+	}
+	static ConvertWorldCoordinateToChunkCoordinate(worldPos: Vector3): Vector3 {
+		const normalisedChunkPosition = new Vector3(
+			math.floor(worldPos.X / (worldgenGlobals.ChunkSize * worldgenGlobals.BlockSize)),
+			math.floor(worldPos.Y / (worldgenGlobals.ChunkSize * worldgenGlobals.BlockSize)),
+			math.floor(worldPos.Z / (worldgenGlobals.ChunkSize * worldgenGlobals.BlockSize))
+		);
+		return normalisedChunkPosition;
+	}
+	static GenerateChunksAtChunkPosition(pos: Vector3) {
+		const x = pos.X;
+		const z = pos.Z;
+
+		let temporaryCoordinateStore = [];
+		for (let ix = x-1; ix < x+2; ix += 1) {
+			for (let iz = z-1; iz < z+2; iz += 1) {
+				temporaryCoordinateStore.push(  [ix, iz]  );
+			}
+		}
+		temporaryCoordinateStore.forEach((coord) => {
+			if (! World.CheckIfChunkAtCoordinateAlreadyExists(coord[0], coord[1])) {
+				const newChunk = new Chunk(coord[0], coord[1]);
+				newChunk.init();
+			}
+		});
+	}
+	static GenerateChunksAroundWorldPosition(pos: Vector3) {
+		const normalisedChunkPosition = this.ConvertWorldCoordinateToChunkCoordinate(pos);
+		this.GenerateChunksAtChunkPosition(normalisedChunkPosition);
+	}
+
+
+	static DisposeOfChunksNotInRangeOfPlayers() {
+		Chunk.DisposeOfChunksNotInRangeOfPlayers();
+	}
+
+
+
+	static Begin_ChunkLoops() {
+		World.ChunkGenerationCoroutine = coroutine.create(function(){
+			while(true) {
+				const map_playerChunkPositions = World.GetAllPlayersCurrentChunkLocations();
+				map_playerChunkPositions.forEach((chunkPos, playerUserId) => {
+					World.GenerateChunksAtChunkPosition(chunkPos);
+				});
+				if (World.ChunkGenerationIsPaused) {
+					break;
+					// must manually resume the coroutine when un-pausing.
+				}
+				wait(5);
+			}
+			coroutine.yield();
+		});
+		World.ChunkDeletionCoroutine = coroutine.create(function(){
+			while(true) {
+				World.DisposeOfChunksNotInRangeOfPlayers();
+				if (World.ChunkGenerationIsPaused) {
+					break;
+					// must manually resume the coroutine when un-pausing.
+				}
+				wait(10);
+			}
+			coroutine.yield();
+		});
+
+
+		coroutine.resume(World.ChunkGenerationCoroutine);
+		coroutine.resume(World.ChunkDeletionCoroutine);
+	}
+
+	static init() {
+		World.Begin_ChunkLoops();
 	}
 };
 
@@ -153,48 +258,6 @@ function octave(nx: number, ny: number, octaves: number) {
 
 
 
-let kx = 0;
-let kz = 0;
-let valid = true;
-let timesRan = 0;
-// let heightModifier = ReplicatedStorage_Dev.HeightModifier;
-let chunkSize = ReplicatedStorage_Dev.ChunkSize;
-let canvasX = ReplicatedStorage_Dev.CanvasX;
-let canvasZ = ReplicatedStorage_Dev.CanvasZ;
-
-
-function resize_canvas() {
-	blocksFolder.ClearAllChildren();
-	for (let ix = 0; ix < math.floor(canvasX.Value); ix += 1) {
-		for (let iz = 0; iz < math.floor(canvasZ.Value); iz += 1) {
-			const part = new Instance("Part", blocksFolder);
-			part.Size = new Vector3(4, 4, 4);
-			part.Anchored = true;
-			part.CanCollide = true;
-			part.Position = new Vector3(ix, 4, iz);
-		}
-	}
-}
-
-
-let abc = coroutine.wrap(function(){
-	resize_canvas();
-
-	RunService.Heartbeat.Connect(()=>{
-		kx = kx + 0.05;
-
-		// position_blocks(kx, kz);
-
-		timesRan = timesRan + 1;
-		if (timesRan > 2000) {
-			coroutine.yield();
-		}
-	});
-	
-});
-// abc();
-
-
 
 
 
@@ -205,10 +268,69 @@ class Chunk {
 	static RunningId: number = 1;
 	static GlobalList: (Chunk)[] = [];
 	static DefaultedCenterPartsWithVoxelLattice: boolean = false;
+	static GetChunkWithPositionId(positionId: string) {
+		return this.GlobalList.find((queryChunk) => {
+			return queryChunk.positionId === positionId;
+		});
+	}
+	static DisposeOfChunksNotInRangeOfPlayers() {
+		let normalisedPlayerPositions: Vector3[] = [];
+		let playerPositions: Vector3[] = [];
+		const players = Players.GetPlayers();
+		if (players.size() <= 0) return;
+
+		for (let player of players) {
+			const char = player.Character! as Model;
+			const playerPosition = char.GetPrimaryPartCFrame().Position;
+			normalisedPlayerPositions.push(
+				World.ConvertWorldCoordinateToChunkCoordinate(playerPosition)
+			);
+			playerPositions.push(playerPosition);
+		}
+
+		const chunksToBeDisposed = Chunk.GlobalList.filter((queryChunk) => {
+			// get closest player to this queryChunk, first
+			
+			// let distances1: number[] = [];
+			// distances1 = normalisedPlayerPositions.map((normalPos) => {
+			// 	const deltaX = queryChunk.posX - normalPos.X;
+			// 	const deltaZ = queryChunk.posZ - normalPos.Z;
+			// 	return ((deltaX * deltaX) + (deltaZ * deltaZ)) ** 0.5;
+			// });
+
+			// const closestPlayerDelta1 = math.min(...distances1);
+			// if (closestPlayerDelta1 > World.Settings.RenderDistance) {
+			// 	// assigned for termination...
+			// 	return true;
+			// }
+
+			let distances2: number[] = [];
+			const tempMultiplier = worldgenGlobals.ChunkSize * worldgenGlobals.BlockSize;
+			distances2 = playerPositions.map((playerPos) => {
+				const deltaX = (queryChunk.posX * tempMultiplier + (tempMultiplier * 0.5) ) - playerPos.X;
+				const deltaZ = (queryChunk.posZ * tempMultiplier + (tempMultiplier * 0.5) ) - playerPos.Z;
+				return ((deltaX * deltaX) + (deltaZ * deltaZ)) ** 0.5;
+			});
+			const closestPlayerDistance2 = math.min(...distances2);
+			if (closestPlayerDistance2 > World.Settings.RenderDistance * tempMultiplier) {
+				// assign for termination
+				return true;
+			}
+
+
+			return false;
+		});
+
+		chunksToBeDisposed.forEach((chunk) => {
+			chunk.destroy();
+		});
+
+	}
 
 	id: number;
 	posX: number;
 	posZ: number;
+	positionId: string;
 
 	partsArray: Part[];
 	partsModel: Model;
@@ -240,11 +362,12 @@ class Chunk {
 		
 		this.posX = posX;
 		this.posZ = posZ;
+		this.positionId = `${this.posX},${this.posZ}`;
 
 		this.topLayerPartsArray = [];
 		this.partsArray = [];
 		this.partsModel = new Instance("Model", WorldChunks);
-		this.partsModel.Name = `Chunk${this.id}`;
+		this.partsModel.Name = `Chunk${this.id}_${this.positionId}`;
 		
 		this.centerPartsWithVoxelLattice = Chunk.DefaultedCenterPartsWithVoxelLattice;
 
@@ -495,6 +618,20 @@ class Chunk {
 
 	fill_in_vertical_gap_at_index(partIndex: number) {
 
+		interface NeighbouringChunkDefinition {
+			"north": (Chunk | undefined);
+			"east": (Chunk | undefined);
+			"south": (Chunk | undefined);
+			"west": (Chunk | undefined);
+		};
+		let neighbourChunks: NeighbouringChunkDefinition = {
+			"north": undefined,
+			"east": undefined,
+			"south": undefined,
+			"west": undefined
+		};
+		let neighbourBlocks = [];
+
 		const currentPart = this.topLayerPartsArray[partIndex];
 		const boundaryIndicator = this.check_if_part_is_on_chunk_boundary(partIndex);
 		if ([3, 6, 9 ,12].includes(boundaryIndicator)) {
@@ -513,7 +650,10 @@ class Chunk {
 
 
 		if (boundaryIndicator === 0) {
-			const neighbours = [
+			// no need to worry about any of the neighbours not existing, because... they DO in fact exist.
+			// because this block is not a boundaryblock.
+
+			neighbourBlocks = [
 				// North
 				this.topLayerPartsArray[partIndex - this.chunkSize],
 				
@@ -526,76 +666,114 @@ class Chunk {
 				// West
 				this.topLayerPartsArray[partIndex - 1]
 			];
-			const maximumY = currentPart.Position.Y;
-			let minimumY = math.huge;
-			// now find the greatest negative displacement from current block to any of the neighbour-blocks
-			for (let partBlock of neighbours) {
-				if (partBlock.Position.Y < minimumY) {
-					minimumY = partBlock.Position.Y;
-				}
+
+		} else {
+			// if there's a possibility that some neighbours may not exist in THIS chunk
+			// therefore, get the chunk in the cardinal direction required, put that to the side
+
+			const verbose = false;
+
+			if ([9, 1, 3].includes(boundaryIndicator)) {
+				// any direction containing North
+				const northChunk = Chunk.GetChunkWithPositionId(`${this.posX},${this.posZ-1}`);
+				if (northChunk) neighbourChunks["north"] = northChunk;
+				else if (verbose) print(`Error, northChunk does not exist.`);
 			}
-			print(`MinimumY = ${minimumY}`);
+			if ([3, 2, 6].includes(boundaryIndicator)) {
+				// any direction containing East
+				const eastChunk = Chunk.GetChunkWithPositionId(`${this.posX+1},${this.posZ}`);
+				if (eastChunk) neighbourChunks["east"] = eastChunk;
+				else if (verbose) print(`Error, eastChunk does not exist.`);
+			}
+			if ([6, 4, 12].includes(boundaryIndicator)) {
+				// any direction containing South
+				const southChunk = Chunk.GetChunkWithPositionId(`${this.posX},${this.posZ+1}`);
+				if (southChunk) neighbourChunks["south"] = southChunk;
+				else if (verbose) print(`Error, southChunk does not exist.`);
+			}
+			if ([12, 8, 9].includes(boundaryIndicator)) {
+				// any direction containing West
+				const westChunk = Chunk.GetChunkWithPositionId(`${this.posX-1},${this.posZ}`);
+				if (westChunk) neighbourChunks["west"] = westChunk;
+				else if (verbose) print(`Error, westChunk does not exist.`);
+			}
+			// if there was South East, it'd be picked up by the 2nd and 3rd if blocks, hence both South and East are accounted for.
+
+
+			// if, in the Neighbouring Chunks object, any of the cardinal directions are defined
+			// then that means that the mentioned chunk in that direction has to be grabbed-from
+
 			
-			const deltaY = maximumY - minimumY;
-			const deltaY_blockScale = deltaY / 4;
-			const floored_deltaY_blockScale = math.floor(deltaY_blockScale);
-
-			for (let i=0; i < floored_deltaY_blockScale; i+=1) {
-				const newPart = new Instance("Part", this.partsModel);
-				this.partsArray.push(newPart);
-				newPart.Anchored = true;
-				newPart.CanCollide = true;
-				newPart.Material = Enum.Material.SmoothPlastic;
-				newPart.Size = new Vector3(worldgenGlobals.BlockSize, worldgenGlobals.BlockSize, worldgenGlobals.BlockSize);
-				newPart.Position = new Vector3(
-					currentPart.Position.X,
-					currentPart.Position.Y - ((i + 1) * worldgenGlobals.BlockSize),
-					currentPart.Position.Z
-				);
+			if (neighbourChunks["north"]) {
+				// unconfirmed, must see if it works
+				const northChunk = neighbourChunks["north"];
+				const northBlock = northChunk.topLayerPartsArray[ (northChunk.chunkSize * northChunk.chunkSize) - northChunk.chunkSize + partIndex ];
+				neighbourBlocks.push(northBlock);
+			} else {
+				neighbourBlocks.push(this.topLayerPartsArray[partIndex - this.chunkSize]);
 			}
 
+			if (neighbourChunks["east"]) {
+				const eastChunk = neighbourChunks["east"];
+				const eastBlock = eastChunk.topLayerPartsArray[ partIndex - (eastChunk.chunkSize - 1) ];
+				neighbourBlocks.push(eastBlock);
+			} else {
+				neighbourBlocks.push(this.topLayerPartsArray[partIndex + 1]);
+			}
+
+			if (neighbourChunks["south"]) {
+				const southChunk = neighbourChunks["south"];
+				const southBlock = southChunk.topLayerPartsArray[ partIndex % southChunk.chunkSize ];
+				neighbourBlocks.push(southBlock);
+			} else {
+				neighbourBlocks.push(this.topLayerPartsArray[partIndex + this.chunkSize]);
+			}
+
+			if (neighbourChunks["west"]) {
+				const westChunk = neighbourChunks["west"];
+				const westBlock = westChunk.topLayerPartsArray[ math.floor(partIndex / westChunk.chunkSize) * westChunk.chunkSize + westChunk.chunkSize - 1 ];
+				neighbourBlocks.push(westBlock);
+			} else {
+				neighbourBlocks.push(this.topLayerPartsArray[partIndex - 1]);
+			}
 		}
 
-		// switch(boundaryIndicator) {
-			
-		// 	case 1:
-		// 		// North
-		// 		break;
-		// 	case 2:
-		// 		// East
-		// 		break;
-		// 	case 4:
-		// 		// South
-		// 		break;
-		// 	case 8:
-		// 		// West
-		// 		break;
-		// 	case 3:
-		// 		// North East
-		// 		break;
-		// 	case 6:
-		// 		// South East
-		// 		break;
-		// 	case 9:
-		// 		// North West
-		// 		break;
-		// 	case 12:
-		// 		// South West
-		// 		break;
+		// print(`Neighbour Blocks size = ${neighbourBlocks.size()}`);
+
+		const maximumY = currentPart.Position.Y;
+		let minimumY = math.huge;
+		// now find the greatest negative displacement from current block to any of the neighbour-blocks
+		for (let partBlock of neighbourBlocks) {
+			if (partBlock.Position.Y < minimumY) {
+				minimumY = partBlock.Position.Y;
+			}
+		}
+		// print(`MinimumY = ${minimumY}`);
+		
+		const deltaY = maximumY - minimumY;
+		const deltaY_blockScale = deltaY / 4;
+		const floored_deltaY_blockScale = math.floor(deltaY_blockScale);
+
+		for (let i=0; i < floored_deltaY_blockScale; i+=1) {
+			const newPart = new Instance("Part", this.partsModel);
+			this.partsArray.push(newPart);
+			newPart.Anchored = true;
+			newPart.CanCollide = true;
+			newPart.Material = Enum.Material.SmoothPlastic;
+			newPart.Size = new Vector3(worldgenGlobals.BlockSize, worldgenGlobals.BlockSize, worldgenGlobals.BlockSize);
+			newPart.Position = new Vector3(
+				currentPart.Position.X,
+				currentPart.Position.Y - ((i + 1) * worldgenGlobals.BlockSize),
+				currentPart.Position.Z
+			);
+		}
 
 
-		// 	case 0:
-		// 	default:
-		// 		// default with zero
-		// 		break;
-		// }
-
-
-		return 1;
 	}
 
 
 	destroy_parts() {
+		this.topLayerPartsArray = [];
 		this.partsArray = [];
 		this.partsModel.Destroy();
 		// let model handle cleanup of all parts children
@@ -621,10 +799,17 @@ class Chunk {
 
 	destroy() {
 		const id = this.id;
+		const prevPosId = this.positionId;
 		this.destroy_parts();
-		[ Chunk.GlobalList[this.id], Chunk.GlobalList[Chunk.GlobalList.size() - 1] ] = [ Chunk.GlobalList[Chunk.GlobalList.size() - 1], Chunk.GlobalList[this.id] ];
-		Chunk.GlobalList.pop();
-		print(`Destroyed Chunk #${id}.`);
+
+		// [ Chunk.GlobalList[this.id], Chunk.GlobalList[Chunk.GlobalList.size() - 1] ] = [ Chunk.GlobalList[Chunk.GlobalList.size() - 1], Chunk.GlobalList[this.id] ];
+		// Chunk.GlobalList.pop();
+
+		Chunk.GlobalList.remove(this.id - 1);
+
+		// Chunk.GlobalList = Chunk.GlobalList.filter((chunk) => chunk.id !== this.id);
+
+		print(`Destroyed Chunk #${id}. ${prevPosId}`);
 	}
 };
 
@@ -649,14 +834,25 @@ class Chunk {
 
 
 
-const bob = new Chunk(1, 1);
-bob.init();
+// const bob = new Chunk(1, 1);
+// bob.init();
 
-const sam = new Chunk(1, 2);
-sam.init();
+// const sam = new Chunk(1, 2);
+// sam.init();
 
 // wait(2);
 // bob.destroy();
+
+
+// wait(5);
+
+// (()=>{
+// 	const map_playerChunkPositions = World.GetAllPlayersCurrentChunkLocations();
+// 	map_playerChunkPositions.forEach((chunkPos, playerUserId) => {
+// 		World.GenerateChunksAtChunkPosition(chunkPos);
+// 	});
+// 	World.DisposeOfChunksNotInRangeOfPlayers();
+// })();
 
 
 
@@ -675,6 +871,6 @@ ReplicatedStorage_Events.Regenerate.OnServerEvent.Connect((player: Player, _para
 
 
 
-
+World.init();
 
 export {};

@@ -17,5 +17,9 @@
 	- This was a month or two... or three... in the making. I've finally done it?<br>
 	There must be a more efficient solution compared to the hobjob I've scrappily semi-intelligently written up. If _you_ know of a way, inform me!
 	
+09062021. 09/06/2021 - Wednesday 09 June 2021 - Commit 8<br>
+	- Infinite Terrain is now here! I'm getting any Player's Chunk Position and generating new chunks around said position, refraining if there's already existing chunks there. When there are no Players nearby, or within a certain distance, to a Chunk then Chunk Disposal occurs. It's like garbage collection, but for masses of Parts. It does cause some noticable frame-drops when creating and deleting; must research how to spread over multiple frames/computation-cycles/CSG-unions.<br>
+	- Remember Chunk Gap-filling? It's now upgraded to look around for neigbouring chunks and use their parts when calculating deltaY blocks to fill, leading to (in most cases) seamless transitions between Chunks. There are certain edge-cases (haha punny) where a noticable _fat gap_ is left in the wake of a Chunk IF it was generated _after_ another Chunk, hence it could not compute the edge, because there physically was no chunk to look at. Must research how to systemically prevent gap-fill-bugs, perhaps by looping over all chunks within an area to fill gaps? But wouldn't that just add extra blocks on top of already generated gap-fillers?<br>
+	- I'd like to add Block Editing next. Oh boy, this will be... hard. It's not like I've got a list of blocks to loop over if a raycast hits one, no, they're all Parts vaguely bound together in a Model whilst being referenced in a separate Array... Welp, that's for future me to work on. I'm tired.
 
 End of file.

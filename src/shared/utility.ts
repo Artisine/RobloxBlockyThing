@@ -90,6 +90,21 @@ export function i_constraint(what_i: number, max_i: number) {
 };
 
 
+/**
+ * Will return how many multiples of x can be found in y.
+ * 
+ * X being query, Y being target.
+ * 
+ * Example, how many multiples of 4 can be found in 51? (Answer is 12, remainder 3)
+ * 
+ * Example, how many multiples of 9 can be found in 4? (Answer is 0, remainder 0.4recur)
+ * @param query What multiple to search-for
+ * @param target Number to search for multiples IN
+ */
+export function how_many_multiples(query: number, target: number): number {
+	return math.floor(target / query);
+}
+
 
 
 
