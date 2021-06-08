@@ -15,7 +15,9 @@ const blocksFolder = new Instance("Folder", Workspace);
 blocksFolder.Name = "BlocksFolder";
 
 wait(1);
-const WorldChunks = Workspace.WaitForChild("WorldChunks") as Folder;
+const WorldChunks = new Instance("Folder", Workspace);
+WorldChunks.Name = "WorldChunks";
+// const WorldChunks = Workspace.WaitForChild("WorldChunks") as Folder;
 
 wait(5);
 
@@ -51,7 +53,7 @@ let worldgenGlobals: WorldgenGlobals = {
 
 	OffsetWorldHeight: 4,
 
-	CenterOnVoxelLattice: false
+	CenterOnVoxelLattice: true
 };
 
 
@@ -211,9 +213,13 @@ class Chunk {
 	partsArray: Part[];
 	partsModel: Model;
 
+	topLayerPartsArray: Part[];
+
 	chunkSize: number;
 
 	centerPartsWithVoxelLattice: boolean;
+
+	chunkHeightMap: number[];
 
 	/**
 	 * A relative heightmap for the blocks in this chunk.
@@ -235,6 +241,7 @@ class Chunk {
 		this.posX = posX;
 		this.posZ = posZ;
 
+		this.topLayerPartsArray = [];
 		this.partsArray = [];
 		this.partsModel = new Instance("Model", WorldChunks);
 		this.partsModel.Name = `Chunk${this.id}`;
@@ -242,13 +249,14 @@ class Chunk {
 		this.centerPartsWithVoxelLattice = Chunk.DefaultedCenterPartsWithVoxelLattice;
 
 		this.chunkSize = worldgenGlobals.ChunkSize;
+		this.chunkHeightMap = [];
 		this.relativeHeightMap = [];
 		this.temporaryHeightMap = [];
 
 		Chunk.GlobalList.push(this);
 	}
 
-	create_parts() {
+	create_initial_toplayer_parts() {
 		const blockSize = worldgenGlobals.BlockSize;
 		const chunkSize = this.chunkSize;
 		const halfChunkSize = chunkSize / 2;
@@ -280,32 +288,128 @@ class Chunk {
 					z * blockSize + blockSize * 0.5 + blockSize * chunkPositionOffset.Z
 				);
 
+				this.topLayerPartsArray.push(part);
 				this.partsArray.push(part);
 			}
 		}
+
+		// print(`Parts Array size = ${this.partsArray.size()}`);
 	}
+
 	position_parts() {
+		this.position_heightmap_top_parts();
+		
+		for (let x = 0; x < this.chunkSize; x += 1) {
+			for (let z = 0; z < this.chunkSize; z += 1) {
+				const partIndex = x * this.chunkSize + z;
+				this.fill_in_vertical_gap_at_index(partIndex);
+			}
+		}
+	}
+
+
+	/**
+	 * 
+	 * @param partIndex 
+	 * @returns 0 if NOT on the internal chunk boundary
+	 * @returns 1 N - if sitting on North row
+	 * @returns 2 E - if sitting on East col
+	 * @returns 4 S - if sitting on South row
+	 * @returns 8 W - if sitting on West col
+	 * @returns 3 NE - if sitting on North-East corner; a corner-case.
+	 * @returns 6 SE - if sitting on South-East corner; a corner-case.
+	 * @returns 9 NW - if sitting on North-West corner; a corner-case.
+	 * @returns 12 SW - if sitting on South-West corner; a corner-case.
+	 */
+	check_if_part_is_on_chunk_boundary(partIndex: number): number {
+
+		// i wrote these down in general mathematical form, meaning array indexing starts at 1, not 0, like in LUA.
+		// therefore, you'll see many minus-ones
+
+		/**
+		 * North = top row
+		 * East = right col
+		 * South = bottom row
+		 * West = left col
+		 */
+
+		const north = 0 <= partIndex && partIndex <= (this.chunkSize - 1);
+		const east  = ((partIndex + 1) % this.chunkSize === 0);
+		const south = (((this.chunkSize - 1) * this.chunkSize) + 1 - 1) <= partIndex && partIndex <= ((this.chunkSize * this.chunkSize) - 1);
+		const west  = (partIndex % this.chunkSize === 0);
+
+		if (north || east || south || west) {
+			// print(`true`);
+			// is on the internal chunk boundary
+			
+			if (north && east) return 3;
+			else if (south && east) return 6;
+			else if (north && west) return 9;
+			else if (south && west) return 12;
+			else if (north) return 1;
+			else if (east) return 2;
+			else if (south) return 4;
+			else if (west) return 8;
+			else {
+				print("this should not be called upon");
+				return 0;
+			}
+
+		} else {
+			// print(`false`);
+			// is not on the boundary
+			return 0;
+		}
+
+		return 0;
+	}
+	get_chunk_heightmap() {
+		const chunkSize = this.chunkSize;
+		const blockSize = worldgenGlobals.BlockSize;
+		const chunkPositionOffset = new Vector3(
+			this.posX * chunkSize,
+			0,
+			this.posZ * chunkSize
+		);
+
+		this.chunkHeightMap = [];
+		for (let i=0; i < (this.chunkSize * this.chunkSize); i+=1) {
+			this.chunkHeightMap.push(0);
+		}
 
 		for (let x = 0; x < this.chunkSize; x += 1) {
 			for (let z = 0; z < this.chunkSize; z += 1) {
-				const part = this.partsArray[x * this.chunkSize + z];
-				
-				const posX = part.Position.X, posZ = part.Position.Z;
-
-				let newPosY = worldgenGlobals.OffsetWorldHeight + octave(
+				const posX = x * blockSize + blockSize * 0.5 + blockSize * chunkPositionOffset.X;
+				const posZ = z * blockSize + blockSize * 0.5 + blockSize * chunkPositionOffset.Z
+				const heightMap_val = octave(
 					posX / this.chunkSize,
 					posZ / this.chunkSize,
 					worldgenGlobals.Octaves
-				) * worldgenGlobals.BlockSize * ReplicatedStorage_Dev.MaximumWorldHeight.Value;
+				);
+				this.chunkHeightMap[x * chunkSize + z] = heightMap_val;
+			}
+		}
+	}
+	position_heightmap_top_parts() {
+
+		this.get_chunk_heightmap();
+
+		for (let x = 0; x < this.chunkSize; x += 1) {
+			for (let z = 0; z < this.chunkSize; z += 1) {
+
+				const partIndex = x * this.chunkSize + z;
+				// print(`part index = ${partIndex}`);
+
+				const part = this.topLayerPartsArray[partIndex];
+				
+				const posX = part.Position.X;
+				const posZ = part.Position.Z;
+
+				const heightMap_val = this.chunkHeightMap[x * this.chunkSize + z];
+				let newPosY = worldgenGlobals.OffsetWorldHeight + (heightMap_val * worldgenGlobals.BlockSize * ReplicatedStorage_Dev.MaximumWorldHeight.Value);
 				if (this.centerPartsWithVoxelLattice  || worldgenGlobals.CenterOnVoxelLattice ) {
 					newPosY = math.ceil(newPosY / worldgenGlobals.BlockSize) * worldgenGlobals.BlockSize - worldgenGlobals.BlockSize * 0.5;
 				}
-
-				
-				// this.temporaryHeightMap.push(
-				// 	[part, math.round(map(newPosY, 0, worldgenGlobals.MaximumWorldHeight, 0, worldgenGlobals.MaximumWorldHeight * worldgenGlobals.BlockSize))]
-				// );
-
 
 				part.Position = new Vector3(
 					posX,
@@ -315,18 +419,180 @@ class Chunk {
 			}
 		}
 
-		// let min = worldgenGlobals.MaximumWorldHeight * 2;
-		// let max = worldgenGlobals.MaximumWorldHeight * 2;
-		// this.relativeHeightMap = this.temporaryHeightMap.map((subarr) => {
-		// 	const sub1 = subarr[1] as number;
-		// 	min = (sub1 < min) ? sub1 : min;
-		// 	max = (sub1 > max) ? sub1 : max;
-		// 	return min++;
-		// }).map((val) => val - (max - min));
+		// const delta = this.partsArray.size() - (this.chunkSize * this.chunkSize);
+		// if (delta && delta > 0) {
+		// 	for (let i = 0; i < delta; i += 1) {
+		// 		const pt = this.partsArray[i];
+		// 		pt.Position = this.partsArray[0].Position;
+		// 		pt.Destroy();
+		// 		this.partsArray.remove((this.chunkSize * this.chunkSize));
+		// 	}
+		// }
 
+		this.get_relative_block_heights();
+		
+	}
+
+	get_relative_block_heights() {
+		// let min = worldgenGlobals.MaximumWorldHeight * 0.5;
+		// let max = worldgenGlobals.MaximumWorldHeight * 0.5;
+		// for (let part of this.partsArray) {
+		// 	if (part.Position.Y < min) {
+		// 		min = part.Position.Y;
+		// 	}
+		// 	if (part.Position.Y > max) {
+		// 		max = part.Position.Y;
+		// 	}
+		// }
+
+		let knownHeights = new Set<number>();
+		this.partsArray.forEach((part) => {
+			knownHeights.add(part.Position.Y);
+		});
+
+		const sorted = (function(){
+			const thing = knownHeights;
+			const thingval = [... thing];
+			thingval.sort();
+			return thingval;
+		})();
+		
+		let relativeHeights: {[key: string]: number} = {};
+		let i = 1;
+		for (let heightval of sorted) {
+			// should be smallest to largest
+			relativeHeights[tostring(i)] = heightval;
+			i = i + 1;
+		}
+
+		let relativeHeightMap: number[] = [];
+
+		for (let part of this.partsArray) {
+			const y = part.Position.Y;
+			let chosenkey = "";
+			for (let [key, val] of pairs(relativeHeights)) {
+				if (y === val) {
+					chosenkey = key as string;
+					break;
+				}
+			}
+			if (chosenkey !== "") {
+				const numberform = tonumber(chosenkey);
+				if (numberform) {
+					relativeHeightMap.push(numberform);
+				} else {
+					print("ERRRRRRORRRRRR!!!!");
+				}
+			} else {
+				print("Error!!!!!!!!!!!!!!!!!");
+			}
+		}
+
+		this.relativeHeightMap = relativeHeightMap;
 		// print(this.relativeHeightMap.join(" , "));
 	}
 
+
+	fill_in_vertical_gap_at_index(partIndex: number) {
+
+		const currentPart = this.topLayerPartsArray[partIndex];
+		const boundaryIndicator = this.check_if_part_is_on_chunk_boundary(partIndex);
+		if ([3, 6, 9 ,12].includes(boundaryIndicator)) {
+			currentPart.Color = Color3.fromRGB(255, 0, 0);
+		} 
+		else if (boundaryIndicator === 1) currentPart.Color = Color3.fromRGB(255, 70, 150);
+		else if (boundaryIndicator === 2) currentPart.Color = Color3.fromRGB(255, 255, 90);
+		else if (boundaryIndicator === 4) currentPart.Color = Color3.fromRGB(85, 255, 127);
+		else if (boundaryIndicator === 8) currentPart.Color = Color3.fromRGB(85, 170, 255);
+		else if (boundaryIndicator !== 0) {
+			// it's on the internal chunk boundary
+			currentPart.Color = Color3.fromRGB(235, 122, 56);
+		} else {
+			currentPart.Color = Color3.fromRGB(163, 162, 165);
+		}
+
+
+		if (boundaryIndicator === 0) {
+			const neighbours = [
+				// North
+				this.topLayerPartsArray[partIndex - this.chunkSize],
+				
+				// East
+				this.topLayerPartsArray[partIndex + 1],
+
+				// South
+				this.topLayerPartsArray[partIndex + this.chunkSize],
+
+				// West
+				this.topLayerPartsArray[partIndex - 1]
+			];
+			const maximumY = currentPart.Position.Y;
+			let minimumY = math.huge;
+			// now find the greatest negative displacement from current block to any of the neighbour-blocks
+			for (let partBlock of neighbours) {
+				if (partBlock.Position.Y < minimumY) {
+					minimumY = partBlock.Position.Y;
+				}
+			}
+			print(`MinimumY = ${minimumY}`);
+			
+			const deltaY = maximumY - minimumY;
+			const deltaY_blockScale = deltaY / 4;
+			const floored_deltaY_blockScale = math.floor(deltaY_blockScale);
+
+			for (let i=0; i < floored_deltaY_blockScale; i+=1) {
+				const newPart = new Instance("Part", this.partsModel);
+				this.partsArray.push(newPart);
+				newPart.Anchored = true;
+				newPart.CanCollide = true;
+				newPart.Material = Enum.Material.SmoothPlastic;
+				newPart.Size = new Vector3(worldgenGlobals.BlockSize, worldgenGlobals.BlockSize, worldgenGlobals.BlockSize);
+				newPart.Position = new Vector3(
+					currentPart.Position.X,
+					currentPart.Position.Y - ((i + 1) * worldgenGlobals.BlockSize),
+					currentPart.Position.Z
+				);
+			}
+
+		}
+
+		// switch(boundaryIndicator) {
+			
+		// 	case 1:
+		// 		// North
+		// 		break;
+		// 	case 2:
+		// 		// East
+		// 		break;
+		// 	case 4:
+		// 		// South
+		// 		break;
+		// 	case 8:
+		// 		// West
+		// 		break;
+		// 	case 3:
+		// 		// North East
+		// 		break;
+		// 	case 6:
+		// 		// South East
+		// 		break;
+		// 	case 9:
+		// 		// North West
+		// 		break;
+		// 	case 12:
+		// 		// South West
+		// 		break;
+
+
+		// 	case 0:
+		// 	default:
+		// 		// default with zero
+		// 		break;
+		// }
+
+
+		return 1;
+	}
 
 
 	destroy_parts() {
@@ -346,7 +612,7 @@ class Chunk {
 		});
 
 		// wait(1);
-		this.create_parts();
+		this.create_initial_toplayer_parts();
 		// wait(2);
 		this.position_parts();
 		print(`New Chunk #${this.id} at position XZ(${this.posX} , ${this.posZ})`);
@@ -369,25 +635,25 @@ class Chunk {
 
 
 
-let abcd = [];
-for (let i1 = -2; i1 < 2; i1 += 1) {
-	for (let i2 = -2; i2 < 2; i2 += 1) {
-		abcd.push([i1, i2]);
-	}
-}
-abcd.forEach((subarr) => {
-	const newChunk = new Chunk(subarr[0], subarr[1]);
-	newChunk.init();
-});
+// let abcd = [];
+// for (let i1 = -2; i1 < 2; i1 += 1) {
+// 	for (let i2 = -2; i2 < 2; i2 += 1) {
+// 		abcd.push([i1, i2]);
+// 	}
+// }
+// abcd.forEach((subarr) => {
+// 	const newChunk = new Chunk(subarr[0], subarr[1]);
+// 	newChunk.init();
+// });
 
 
 
 
-// const bob = new Chunk(1, 1);
-// bob.init();
+const bob = new Chunk(1, 1);
+bob.init();
 
-// const sam = new Chunk(1, 2);
-// sam.init();
+const sam = new Chunk(1, 2);
+sam.init();
 
 // wait(2);
 // bob.destroy();
