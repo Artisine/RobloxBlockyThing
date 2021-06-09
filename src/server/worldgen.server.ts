@@ -57,7 +57,7 @@ let worldgenGlobals: WorldgenGlobals = {
 };
 
 
-
+let deletionList: string[] = [];
 
 class World {
 
@@ -102,10 +102,11 @@ class World {
 	}
 
 	static CheckIfChunkAtCoordinateAlreadyExists(x: number, z: number): boolean {
-		const abc = !!(Chunk.GlobalList.find((queryChunk) => {
+		const existsArray = Chunk.GlobalList.filter((queryChunk) => {
 			return queryChunk.positionId === `${x},${z}`;
-		}));
-		return abc;
+		});
+		print(`Exists array size = ${existsArray.size()}`);
+		return (existsArray.size() > 0);
 	}
 	static ConvertWorldCoordinateToChunkCoordinate(worldPos: Vector3): Vector3 {
 		const normalisedChunkPosition = new Vector3(
@@ -162,6 +163,7 @@ class World {
 		World.ChunkDeletionCoroutine = coroutine.create(function(){
 			while(true) {
 				World.DisposeOfChunksNotInRangeOfPlayers();
+				print(`Running Deletion list:\n${deletionList.join(",\n\t")}`);
 				if (World.ChunkGenerationIsPaused) {
 					break;
 					// must manually resume the coroutine when un-pausing.
@@ -800,6 +802,8 @@ class Chunk {
 	destroy() {
 		const id = this.id;
 		const prevPosId = this.positionId;
+
+		deletionList.push(prevPosId);
 		this.destroy_parts();
 
 		// [ Chunk.GlobalList[this.id], Chunk.GlobalList[Chunk.GlobalList.size() - 1] ] = [ Chunk.GlobalList[Chunk.GlobalList.size() - 1], Chunk.GlobalList[this.id] ];
@@ -809,7 +813,7 @@ class Chunk {
 
 		// Chunk.GlobalList = Chunk.GlobalList.filter((chunk) => chunk.id !== this.id);
 
-		print(`Destroyed Chunk #${id}. ${prevPosId}`);
+		print(`Destroyed Chunk #${id} at (${prevPosId})`);
 	}
 };
 
