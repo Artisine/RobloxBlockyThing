@@ -28,8 +28,12 @@ In the Root folder there'll be a file named  `Changelog.md`, where the commits w
 
 ## Compiling from Source
 If you plan to compile the source code on your machine, be sure to:
-- Install the [Rojo extension][rojo] for [Visual Studio Code][vscode]
+- First, create a Roblox account, if you don't have one
+- Second, install [Roblox][roblox_download_player] and [Roblox Studio][roblox_download_studio]
+- Install the [Rojo extension][rojo] for [Visual Studio Code][vscode]<br>
+	It'll also provide the option to install the [Rojo Plugin][github_rojo_releases], select the option "Manage it for me", this will allow the Extension to install the plugin to your Studio Plugins folder, meaning no hard work on your part.
 - Setup the Roblox-Ts environment using these commands:
+
 ```
 user ~/NewFolder/$ rbxtsc init
 
@@ -62,7 +66,7 @@ Also be sure to include these additional packages:
 ```
 user ~/NewFolder/$ npm i --save @rbxts/services @rbxts/object-utils
 ```
-There may have been some things I've forgotten to include in initial setup. Take a peek at the code and you'll gain an intuition for it.
+- (There may have been some things I've forgotten to include in initial setup. Take a peek at the code and you'll gain an intuition for it.)
 
 To do a proper compilation, run command
 ```
@@ -72,6 +76,10 @@ user ~/NewFolder/$ rbxtsc -w
 [xx:yy:zz] Found 0 errors. Watching for file changes.
 ```
 
+- Open _Roblox Studio_ and create a new Place, I'd recommend using preset "Baseplate 2021" for clean look. Or regular "Baseplate" works too.
+- If the Rojo Plugin is missing from Studio's Plugins tab, reload the application, if it's not there a second time around, begin manual installation by drag'n'dropping the [release][github_rojo_releases] into your Studio Plugins folder, instructions found [here][github_rojo_installation_instructions].
+- In _Visual Studio Code_, either use `Ctrl + Shift + P` and type in "Rojo" and then "Initialize", or use the little button at the bottom reading "Rojo vX.Y.Z \[default\], both options will open a local Rojo server which you'll be able to link into _Roblox Studio_ using the Rojo Studio Plugin. Hit "Connect", and after a few ms, all your compiled code in `/out` will be magically teleported into _Roblox Studio_ in the form of "Scripts" or "Local Scripts" or "Module Scripts".
+- Now all that's left to do is enjoy the fruits of your labour. Hit "Play", or click "Run" under the dropdown in the topbar "Test" tab.
 
 [vscode]: https://code.visualstudio.com/
 [typescript]: https://typescriptlang.org/
@@ -81,3 +89,7 @@ user ~/NewFolder/$ rbxtsc -w
 [robloxts_objectutils]: https://www.npmjs.com/package/@rbxts/object-utils/
 [rojo]: https://marketplace.visualstudio.com/items?itemName=evaera.vscode-rojo/
 [robloxts_setupguide]: https://roblox-ts.com/docs/setup-guide/
+[roblox_download_studio]: http://setup.rbxcdn.com/RobloxStudioLauncherBeta.exe
+[roblox_download_player]: https://setup.rbxcdn.com/RobloxPlayerLauncher.exe
+[github_rojo_releases]: https://github.com/rojo-rbx/rojo/releases
+[github_rojo_installation_instructions]: https://rojo.space/docs/installation/#installing-from-github
